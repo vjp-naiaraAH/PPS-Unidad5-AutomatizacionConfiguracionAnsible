@@ -441,7 +441,16 @@ ansible all -i inventory.ini -m shell -a "curl -s -o /dev/null -w '%{http_code}\
 ```
 
 ## ORGANIZACIÓN DE PROYECTOS EN ANSIBLE
-137 ->
+142 ->
+
+143 ->
+
+144 ->
+
+145 ->
+
+## ROLES
+137 -> script manage-create-ngins.yml
 
 138 ->
 
