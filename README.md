@@ -564,8 +564,7 @@ Y le añado lo siguiente:
     state: started
     enabled: yes
 ```
-![creacuib de directorios](/images/140.png)
-![](/images/143.png)
+![creacuib de directorios](/images/143.png)
 **Ansible.cfg** es el archivo en el que se definen los parámetros de funcionamiento de **Ansible**, por ejemplo:
 ```bash
 nano ansible.cfg
