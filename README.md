@@ -78,6 +78,7 @@ minikube service store-app --url -p ansible
 Compruebo que la aplicación funciona navegando a http://192.168.76.2:30583 como indica al terminar los comandos que ejecutamos anteriormente los comandos.
 ![](/images/106.png)
 
+---
 
 ## INSTALAR ANSIBLE EN EQUIPO LOCAL
 Para la isntalación de Ansible ejecutaré los siguientes comandos:
@@ -101,6 +102,8 @@ Compruebo de nuevo que se haya instalado ansible ejecutando
 ansible --version  
 ```
 ![](/images/108.png)
+
+---
 
 ## COMPROBAR Y CONFIGURAR SSH
 Minikube crea una red interna automáticamente que nos va a permitir conectarnos automáticamente por SSH con los workers.
@@ -150,6 +153,8 @@ ssh -i ~/.ssh/minikube_key docker@$(minikube ip --node m03 --profile=ansible)
 ```
 ![](/images/111.png)
 ![](/images/112.png)
+
+---
 
 ## CREAR INVENTARIO ANSIBLE
 Creo el inventario para ansible. El inventario es un archivo en el cual está el nombre y la ip de un conjunto de nodos que están relacionados. Voy a crear el inventario de hosts llamado [crea_inventory.sh](https://github.com/jmmedinac03vjp/PuestaProduccionSegura/blob/main/Unidad5-SistemasDesplegadoAutomatizadoSoftware/ActividadAutomatizacionConfiguracionAnsible/files/crea_inventory.sh)
@@ -215,6 +220,8 @@ ansible all -i inventory.ini -m ping
 ```
 ![](/images/116.png)
 
+---
+
 ## EJECUTAR MÓDULOS ANSIBLE
 A continuación voy a hacer algunas tareas con Ansible:
 ### Usuarios y grupos
@@ -277,3 +284,303 @@ Y dentro:
  ansible-playbook -i inventory.ini manage_maint_files.yml
 ```
 ![](/images/121.png)
+122 -> 3. Compruebo la ejecución:
+```bash
+# Nodos APP: solo /opt/appmaint
+ansible app_nodes -i inventory.ini -m shell -a "ls -la /opt/appmaint/"
+
+# Nodos DB: solo /opt/dbmaint  
+ansible db_nodes -i inventory.ini -m shell -a "ls -la /opt/dbmaint/" -b
+```
+![](/images/122.png)
+
+4. Descargo en la carpeta del proyecto el [archivo de la calve pública que tenemos aquí](https://github.com/jmmedinac03vjp/PuestaProduccionSegura/blob/main/Unidad5-SistemasDesplegadoAutomatizadoSoftware/ActividadAutomatizacionConfiguracionAnsible/files/maintain_key.pub)
+![](/images/123.png)
+5. Creo el siguiente playbook para añadir la clave pública del usuario maint para que pueda conectarse a los nodos:
+```bash
+nano manage_public_key_maint.yml
+```
+```yml
+---
+- name: Anadir clave publica usuario maint
+  hosts: all_workers
+  become: yes
+
+  vars:
+    maint_user: maint
+    local_public_key_file: ./maintain_key.pub
+
+  tasks:
+  
+  - name: Crear carpeta .ssh del usuario
+    ansible.builtin.file:
+      path: /home/maint/.ssh
+      state: directory
+      owner: maint
+      group: maint
+      mode: '0700'
+
+  - name: Copiar clave publica del usuario
+    ansible.builtin.copy:
+      src: ./maintain_key.pub
+      dest: /home/maint/.ssh/maintain_key.pub
+      owner: maint
+      group: maint
+      mode: '0644'
+
+  - name: Autorizar la clave publica para acceso SSH
+    ansible.posix.authorized_key:
+      user: maint
+      state: present
+      key: "{{ lookup('file', './maintain_key.pub') }}"
+      manage_dir: true
+```
+![](/images/124.png)
+6. Ejecutar el playbook con:
+```bash
+ansible-playbook -i inventory.ini manage_public_key_maint.yml
+```
+![](/images/125.png)
+7. Copio la clave privada que tengo [aquí](https://github.com/jmmedinac03vjp/PuestaProduccionSegura/blob/main/Unidad5-SistemasDesplegadoAutomatizadoSoftware/ActividadAutomatizacionConfiguracionAnsible/files/private_maintain_key) en mi directorio personal /home/PPSnaiara/.ssh/. De esta forma cuando me intente conectar por ssh como susuario maint me dejará. 
+![](/images/126.png)
+8. Compruebo las direcciones IP de los nodos y que me deja conectar como usuario maint en los nodos:
+```bash
+nano inventory.ini
+# Comprueba que tienen las ip correctas
+ssh -i ~/.ssh/maintain_key maint@192.168.49.3 "hostname; whoami; pwd"
+ssh -i ~/.ssh/maintain_key maint@192.168.49.4 "hostname; whoami; pwd" 
+```
+![](/images/127.png)
+9. Ejcutar directamente módulo file desde Ansible:
+```bash
+ansible all -i inventory.ini -m file -a "path=/home/maint/miDirectorio state=directory owner=maint group=maint mode='0700'--become"
+```
+![](/images/128.png)
+
+10. COmo ejecutar directamente módulo file:
+```bash
+ansible all -i inventory.ini -m copy -a "src=./inventory.ini dest=/opt/inventory.ini mode=0644 owner=root group=root" -b
+```
+![](/images/129.png)
+
+PACKAGE
+El módulo package permite administrar software.
+1. Crear el siguiente playbook para añadir la calve pública de usuario maint para que pueda conectarse a los nodos:
+```bash
+nano manage_public_key_maint.yml
+``` 
+```yml
+---
+- name: Añadir software mantenimiento en  todos los nodos
+  hosts: all_workers              # Se ejecuta en app_nodes y db_nodes
+  become: yes                    # Necesario para crear usuarios
+  tasks:
+    - name: Instalar paquetes de mantenimiento
+      package:
+        name:
+          - htop
+          - tree
+          - curl
+          - jq
+          - net-tools
+        state: present
+    - name: borrar paquete vim
+      package:
+        name:
+          - vim
+        state: absent
+```
+![](/images/130.png)
+2. Jecutar la tareas
+```bash
+ansible-playbook -i inventory.ini manage_anadir_paquetes_maint.yml
+```
+![](/images/131.png)
+3. Compruebo si se han instalado los paquetes:
+```bash
+ansible all -i inventory.ini -m shell -a "hostname ; dpkg -l | grep -E 'htop|curl|tree|jq|net-tools|vim' "  
+```
+![](/images/132.png)
+4. Instalo directamente desde Ansible
+```bash
+ansible all -i inventory.ini -m apt -a "name=curl state=present" -b
+```
+![](/images/133.png)
+
+### Command & shell & services
+Command y shell se utilizan para ejecutar comandos en el nodo pero:
++ Usar shell siempre excepto cuando usamos pipelines.
++ Usar command cuando usamos pipelines.
+
+1. Creo el siguiente playbook para instalar nginx, levantar el servicio y comprobar que está ejecutándose:
+```bash
+nano manage_servicio_nginx.yml
+```
+```yml
+
+
+[`./manage_anadir_paquetes_maint.yml`](./files/manage_anadir_paquetes_maint.yml)
+```yaml
+---
+- name: Instalar y validar Nginx
+  hosts: all_workers
+  become: true
+
+  tasks:
+    - name: Paso 1 - Instalar Nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Paso 2A - Arrancar y habilitar Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+
+    - name: Paso 2B - Comprobar estado con command (sin pipes)
+      ansible.builtin.command:
+        cmd: systemctl status nginx
+
+    - name: Paso 2C - Comprobar estado con shell (con pipes)
+      ansible.builtin.shell:
+        cmd: systemctl status nginx | grep Active
+      register: nginx_status
+      changed_when: false
+
+    - name: Mostrar salida de status
+      ansible.builtin.debug:
+        var: nginx_status.stdout
+
+    - name: Comprobar HTTP con uri
+      ansible.builtin.uri:
+        url: http://localhost:80
+        status_code: 200
+      register: http_check
+
+    - name: Mostrar resultado HTTP
+      ansible.builtin.debug:
+        var: http_check.status
+```
+![](/images/134.png)
+2. Ejecuto la tarea usando
+```bash
+ansible-playbook -i inventory.ini manage_servicio_nginx.yml
+```
+![](/images/135.png)
+3. Aunque ya esté dentro de la tarea, puedo comprobarlo:
+```bash
+ansible all -i inventory.ini -m shell -a "curl -s -o /dev/null -w '%{http_code}\\n' localhost:80 || echo 'ERROR' "  
+```
+![](/images/136.png)
+
+---
+
+## ORGANIZACIÓN DE PROYECTOS EN ANSIBLE
+Creo ahora estos archivos donde:
++ store_app.ini: es una especia de directorio donde se separan los hosts en inventarios.
++ vars_store_app.yml: son las variables y contienen archivos que contienen la declaración de variables que usaremos en los playbooks
+![](/images/142.png)
+
+---
+
+## ROLES
+### Cómo crear un rol
+Ansible tiene un comando automátco para crear la estructura de rol usnado:
+```bash
+ansible-galaxy init nginx
+```
+![](/images/137.png)
+Creo el siguiente playbook en el que instalo y configuro nginx
+```bash
+nano manage-create-ngins.yml
+```
+Con el contenido
+```yml
+---
+- hosts: web
+  become: yes
+
+  tasks:
+    - name: Instalar nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Copiar index.html
+      copy:
+        src: index.html
+        dest: /var/www/html/index.html
+
+    - name: Arrancar nginx
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+```
+![](/images/138.png)
+Quedaría dela siguiente forma:
+```bash
+sudo nano site.yml
+```
+```yml
+---
+- hosts: app_nodes
+  become: yes
+
+  roles:
+    - nginx
+```
+![](/images/139.png)
+Creo el siguiente directorio:
+```bash
+mkdir roles
+cd roles
+mkdir nginx
+cd nginx
+mkdir tasks
+cd tasks
+nano main.yml
+```
+Y le añado lo siguiente:
+```yml
+---
+- name: Instalar nginx
+  apt:
+    name: nginx
+    state: present
+
+- name: Copiar index.html
+  copy:
+    src: index.html
+    dest: /var/www/html/index.html
+
+- name: Arrancar nginx
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+```
+![](/images/140.png)
+![](/images/143.png)
+Ansible.cfg es el archivo en el que se definen los parámetros de funcionamiento de Ansible, por ejemplo
+```bash
+nano ansible.cfg
+```
+```bash
+[defaults]
+inventory = inventory/inventory.ini
+roles_path = roles
+# silenciar las notificaciones de python
+interpreter_python = auto_silent
+```
+![](/images/144.png)
+Y se ejecutaría directamente:
+```bash
+ansible-playbook site.yml
+```
++ Playbook → describe QUÉ hacer sobre unos hosts.
++ Rol → organiza tareas relacionadas para reutilizarlas y mantener el proyecto limpio.
+![](/images/145.png)
+
